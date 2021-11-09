@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NYANVERSE</title>
+    <script src="https://unpkg.com/obniz@3.3.0/obniz.js"></script>
+    <script src="https://obniz.com/js/jquery-3.2.1.min.js"></script>
+  </head>
+
+  <body>
+    <img class="title__img" src="img/nyanvers-80.jpg" alt="" />
+    <h1>にゃんバースコントローラー</h1>
+    <button onclick="onStartButtonClick()">micro:bit 接続</button>
+    <button onclick="startObniz()">obniz接続</button>
+    <input type="text" id="obnizId" />
+    <hr />
+    <div class="button">
+      <div class="button__item">
+        <img class="button__img" src="img/btn1.png" onclick="kyoukan()" />
+        <div class="button__text">共感する</div>
+      </div>
+
+      <div class="button__item">
+        <img class="button__img" src="img/btn2.png" onclick="yorokobu()" />
+        <div class="button__text">喜ぶ</div>
+      </div>
+      <div class="button__item">
+        <img class="button__img" src="img/btn3.png" onclick="fool()" />
+        <div class="button__text">馬鹿にする</div>
+      </div>
+      <div class="button__item">
+        <img class="button__img" src="img/btn4.png" onclick="angry()" />
+        <div class="button__text">怒る</div>
+      </div>
+      <div class="button__item">
+        <img class="button__img" src="img/btn5.png" onclick="fuan()" />
+        <div class="button__text">不安</div>
+      </div>
+    </div>
+
+    <h2>にゃんバースしっぽメーター</h2>
+    <input id="slider" type="range" min="0" max="180" />
+    <span id="slider-val"></span>
+    <div id="obniz-debug"></div>
+    <style>
+      .title__img {
+        width: 100%;
+        max-width: 300px;
+      }
+      .button {
+        display: flex;
+        flex-wrap: wrap;
+      }
+      .button__item {
+        padding: 0 16px;
+      }
+      .button__text {
+        text-align: center;
+      }
+    </style>
+    <script>
+      $("#slider").change(function () {
+        $("#slider-val").text($("#slider").val());
+      });
+
+      function startObniz() {
+        var obnizId = $("#obnizId").val();
+        var obniz = new Obniz(obnizId);
+        obniz.onconnect = async function () {
+          var servo = obniz.wired("ServoMotor", { gnd: 0, vcc: 1, signal: 2 });
+          $("#slider").change(function () {
+            servo.angle($("#slider").val());
+            console.log($("#slider").val());
+          });
+        };
+
+        obniz.onclose = async function () {
+          $("#slider").off("input");
+        };
+      }
+    </script>
+
+    <script>
+      // ▼追加した部分1
+      class LineBreakTransformer {
+        constructor() {
+          this.chunks = "";
+        }
+
+        transform(chunk, controller) {
+          this.chunks += chunk;
+          const lines = this.chunks.split("\r\n");
+          this.chunks = lines.pop();
+          lines.forEach((line) => controller.enqueue(line));
+        }
+
+        flush(controller) {
+          controller.enqueue(this.chunks);
+        }
+      }
+      let port;
+      var old_value = 90;
+      async function onStartButtonClick() {
+        try {
+          port = await navigator.serial.requestPort();
+          await port.open({ baudRate: 115200 });
+
+          while (port.readable) {
+            // ▼追加した部分2
+            const textDecoder = new TextDecoderStream();
+            const readableStreamClosed = port.readable.pipeTo(
+              textDecoder.writable
+            );
+            const reader = textDecoder.readable
+              .pipeThrough(new TransformStream(new LineBreakTransformer()))
+              .getReader();
+
+            try {
+              while (true) {
+                const { value, done } = await reader.read();
+                if (done) {
+                  console.log("Canceled");
+                  break;
+                }
+                // ▼ここでデコードの処理をしていたのを削除
+                console.log("Read: " + value);
+                if (value != old_value) {
+                  $("#slider")
+                    .val(parseInt(value) + 90)
+                    .change();
+                  old_value = value;
+                }
+              }
+            } catch (error) {
+              console.log("Error: Read");
+              console.log(error);
+            } finally {
+              reader.releaseLock();
+            }
+          }
+        } catch (error) {
+          console.log("Error: Open");
+          console.log(error);
+        }
+      }
+
+      async function writeText(text) {
+        const encoder = new TextEncoder();
+        const writer = port.writable.getWriter();
+        await writer.write(encoder.encode(text));
+        console.log("Write: " + text);
+        writer.releaseLock();
+      }
+
+      const resolveAfter = (args) => {
+        return new Promise((resolve) => {
+          console.log(args);
+          $("#slider").val(args.value).change();
+          setTimeout(resolve, args.timeout);
+        });
+      };
+
+      let p = Promise.resolve();
+
+      function setValue(value, timeout) {
+        setTimeout(() => {
+          $("#slider").val(value).change();
+        }, timeout);
+      }
+
+      function kyoukan() {
+        const argsList = [
+          { value: 90, timeout: 200 },
+          { value: 100, timeout: 200 },
+          { value: 110, timeout: 200 },
+          { value: 120, timeout: 200 },
+          { value: 110, timeout: 200 },
+          { value: 100, timeout: 200 },
+          { value: 90, timeout: 200 },
+        ];
+
+        argsList.forEach((args) => {
+          p = p.then(() => resolveAfter(args));
+        });
+      }
+
+      function yorokobu() {
+        const argsList = [
+          { value: 90, timeout: 100 },
+          { value: 100, timeout: 100 },
+          { value: 110, timeout: 100 },
+          { value: 120, timeout: 100 },
+          { value: 110, timeout: 100 },
+          { value: 100, timeout: 100 },
+          { value: 90, timeout: 100 },
+        ];
+
+        argsList.forEach((args) => {
+          p = p.then(() => resolveAfter(args));
+        });
+      }
+
+      function fuan() {
+        const argsList = [
+          { value: 90, timeout: 100 },
+          { value: 80, timeout: 100 },
+          { value: 70, timeout: 100 },
+          { value: 60, timeout: 100 },
+          { value: 50, timeout: 200 },
+          { value: 60, timeout: 200 },
+          { value: 50, timeout: 200 },
+        ];
+
+        argsList.forEach((args) => {
+          p = p.then(() => resolveAfter(args));
+        });
+      }
+      function fool() {
+        const argsList = [
+          { value: 90, timeout: 100 },
+          { value: 100, timeout: 100 },
+          { value: 110, timeout: 100 },
+          { value: 120, timeout: 100 },
+          { value: 110, timeout: 100 },
+          { value: 100, timeout: 100 },
+          { value: 90, timeout: 100 },
+          { value: 80, timeout: 100 },
+          { value: 70, timeout: 100 },
+          { value: 60, timeout: 100 },
+          { value: 70, timeout: 100 },
+          { value: 80, timeout: 100 },
+          { value: 90, timeout: 100 },
+        ];
+
+        argsList.forEach((args) => {
+          p = p.then(() => resolveAfter(args));
+        });
+      }
+      function angry() {
+        const argsList = [
+          { value: 90, timeout: 100 },
+          { value: 95, timeout: 100 },
+          { value: 100, timeout: 100 },
+          { value: 105, timeout: 100 },
+          { value: 100, timeout: 100 },
+          { value: 95, timeout: 100 },
+          { value: 90, timeout: 100 },
+          { value: 95, timeout: 100 },
+          { value: 100, timeout: 100 },
+          { value: 105, timeout: 100 },
+          { value: 100, timeout: 100 },
+          { value: 95, timeout: 100 },
+          { value: 90, timeout: 100 },
+        ];
+
+        argsList.forEach((args) => {
+          p = p.then(() => resolveAfter(args));
+        });
+      }
+    </script>
+  </body>
+</html>
